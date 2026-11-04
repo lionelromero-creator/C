@@ -157,7 +157,7 @@ tfoot td{height:32px;font-weight:bold}
 <script>
 (function(){
 "use strict";
-var $=function(s){return document.querySelector(s)},page=$("#page"),tb=$("#tb"),menu=$("#menu");
+var $=function(s){return document.querySelector(s)},page=$("#page"),tb=$("#tb"),menu=$("#menu"),KEY="cot_empresas",emp=$("#empresa"),dl=$("#empList"),STATE_KEY="cotizacion_state_v1",HISTORY_KEY="cot_history_v1",HISTORY_INDEX_KEY="cot_history_index_v1";
 
 /* ---------- TABLA Y CÁLCULO ---------- */
 function pad(n){return n<10?"0"+n:""+n}
@@ -179,7 +179,12 @@ function calc(){
   $("#sum").textContent=s.toFixed(2); /* +IGV es solo visual: nunca entra aquí */
 }
 tb.addEventListener("input",function(e){if(e.target.tagName==="INPUT"){calc();saveState();}});
-if(!restoreState()){
+
+var initialState = null;
+try { initialState = JSON.parse(localStorage.getItem(STATE_KEY)); } catch (e) { initialState = null; }
+if (initialState && initialState.rows && initialState.rows.length) {
+  applySnapshot(initialState);
+} else {
   [["CATALINAS CANAL CHABETERO","08",50]].forEach(function(d){
     var r=addTable("row");r.cells[2].textContent=d[0];r.querySelector(".q").value=d[1];r.querySelector(".p").value=d[2].toFixed(2);
   });
@@ -189,7 +194,6 @@ window.addEventListener("beforeunload", saveState);
 var d=new Date(),hoy=pad(d.getDate())+"/"+pad(d.getMonth()+1)+"/"+d.getFullYear();
 
 /* ---------- EMPRESAS Y AUTOGUARDADO (LocalStorage) ---------- */
-var KEY="cot_empresas",emp=$("#empresa"),dl=$("#empList"),STATE_KEY="cotizacion_state_v1",HISTORY_KEY="cot_history_v1",HISTORY_INDEX_KEY="cot_history_index_v1";
 function load(){try{return JSON.parse(localStorage.getItem(KEY))||[]}catch(e){return[]}}
 function defaultSnapshot(){
   return {
@@ -283,7 +287,7 @@ function saveState(){
 function restoreState(){
   var state=null;
   try{state=JSON.parse(localStorage.getItem(STATE_KEY));}catch(e){state=null;}
-  if(!state)return false;
+  if(!state || !Array.isArray(state.rows)) return false;
   var ok=applySnapshot(state);
   if(ok) saveState();
   return ok;
