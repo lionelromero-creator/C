@@ -12,7 +12,8 @@ body{background:#4a4f57;padding:92px 0 24px}
 #bar{position:fixed;top:0;left:0;right:0;z-index:50;display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:8px 12px;background:#20242a;color:#fff}
 #bar button{font:12px Arial;padding:6px 10px;border:0;border-radius:4px;background:#3b82f6;color:#fff;cursor:pointer}
 #bar button.g{background:#5b6270}
-#bar button:hover{filter:brightness(1.15)}
+#bar button:hover:not(:disabled){filter:brightness(1.15)}
+#bar button:disabled{opacity:.45;cursor:not-allowed}
 #bar label.btn{font:12px Arial;padding:6px 10px;border-radius:4px;background:#5b6270;cursor:pointer}
 #bar input[type=file]{display:none}
 /* Hoja A4 */
@@ -86,6 +87,10 @@ tfoot td{height:32px;font-weight:bold}
  <button onclick="addTable('row')">+ Fila</button>
  <button class="g" onclick="addTable('del')">− Fila</button>
  <button class="g" onclick="addText()">+ Cuadro de texto</button>
+ <button class="g" id="btnDefaultState" title="Volver al valor por defecto">⟲ Defecto</button>
+ <button class="g" id="btnReloadState" title="Recargar último guardado">↻ Recargar</button>
+ <button class="g" id="btnBackState" title="Volver atrás">←</button>
+ <button class="g" id="btnForwardState" title="Volver adelante">→</button>
  <button onclick="downloadPDF()">Descargar PDF</button>
  <button onclick="downloadWord()">Guardar Word</button>
  <button onclick="exportPDF()">Imprimir A4</button>
@@ -184,8 +189,45 @@ window.addEventListener("beforeunload", saveState);
 var d=new Date(),hoy=pad(d.getDate())+"/"+pad(d.getMonth()+1)+"/"+d.getFullYear();
 
 /* ---------- EMPRESAS Y AUTOGUARDADO (LocalStorage) ---------- */
-var KEY="cot_empresas",emp=$("#empresa"),dl=$("#empList"),STATE_KEY="cotizacion_state_v1";
+var KEY="cot_empresas",emp=$("#empresa"),dl=$("#empList"),STATE_KEY="cotizacion_state_v1",HISTORY_KEY="cot_history_v1",HISTORY_INDEX_KEY="cot_history_index_v1";
 function load(){try{return JSON.parse(localStorage.getItem(KEY))||[]}catch(e){return[]}}
+function defaultSnapshot(){
+  return {
+    empresa:"COMPAÑÍA RAISE CLIMBER JRF SAC.",
+    rows:[{q:"08",p:"50.00",desc:"CATALINAS CANAL CHABETERO",total:"400.00"}],
+    texts:[
+      "TALLER MECANICO DE MANTENIMIENTO INDUSTRIALMR. TORNO EIRL",
+      "FABRICACION DE PIEZAS INDUSTRIALES Y REPUESTODE MAQUINARIAS",
+      "LUGAR: SANTA MARTHA –CALLE SAN CARLOS MZ B LT 1ATE VITARTE",
+      "TELEFONO: 997330112"
+    ]
+  };
+}
+function getCurrentSnapshot(){return {empresa: emp.value || "", rows: collectRows(), texts: collectTexts()};}
+function getHistory(){try{return JSON.parse(localStorage.getItem(HISTORY_KEY))||[]}catch(e){return[]}}
+function getHistoryIndex(){try{return parseInt(localStorage.getItem(HISTORY_INDEX_KEY),10)||0}catch(e){return 0}}
+function setHistoryIndex(idx){try{localStorage.setItem(HISTORY_INDEX_KEY,String(idx))}catch(e){}}
+function saveHistorySnapshot(){
+  try{
+    var history=getHistory();
+    var snapshot=getCurrentSnapshot();
+    var last=history.length?history[history.length-1]:null;
+    if(!last || JSON.stringify(last)!==JSON.stringify(snapshot)){
+      history.push(snapshot);
+      if(history.length>50) history=history.slice(-50);
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+      setHistoryIndex(history.length-1);
+    }
+  }catch(e){}
+}
+function updateHistoryButtons(){
+  var history=getHistory();
+  var idx=getHistoryIndex();
+  var backBtn=document.getElementById("btnBackState");
+  var forwardBtn=document.getElementById("btnForwardState");
+  if(backBtn) backBtn.disabled = !(history.length>1 && idx>0);
+  if(forwardBtn) forwardBtn.disabled = !(history.length>1 && idx < history.length-1);
+}
 function fill(){
   if(!dl)return;
   dl.innerHTML="";
@@ -199,7 +241,7 @@ function saveCompaniesList() {
 }
 function saveEmp(){
   saveCompaniesList();
-  try{localStorage.setItem(STATE_KEY, JSON.stringify({empresa: emp.value, rows: collectRows(), texts: collectTexts()}));}catch(e){}
+  try{localStorage.setItem(STATE_KEY, JSON.stringify(getCurrentSnapshot()));}catch(e){}
 }
 function collectRows(){
   var rows=[];
@@ -214,17 +256,12 @@ function collectTexts(){
   document.querySelectorAll(".t1.ce, .foot .ce").forEach(function(el){arr.push(el.textContent.trim());});
   return arr;
 }
-function saveState(){
-  try{localStorage.setItem(STATE_KEY, JSON.stringify({empresa: emp.value || "", rows: collectRows(), texts: collectTexts()}));}catch(e){}
-}
-function restoreState(){
-  var state=null;
-  try{state=JSON.parse(localStorage.getItem(STATE_KEY));}catch(e){state=null;}
-  if(!state)return false;
-  if(state.empresa && emp) emp.value=state.empresa;
-  if(Array.isArray(state.rows) && state.rows.length){
+function applySnapshot(snapshot){
+  if(!snapshot)return false;
+  if(snapshot.empresa!==undefined && emp) emp.value=snapshot.empresa;
+  if(Array.isArray(snapshot.rows) && snapshot.rows.length){
     tb.innerHTML="";
-    state.rows.forEach(function(row){
+    snapshot.rows.forEach(function(row){
       var r=tb.insertRow();
       r.innerHTML='<td class="c"></td><td><input class="q" inputmode="decimal" value="1"></td><td class="ce" contenteditable="true"></td><td><input class="p" inputmode="decimal"></td><td class="r">0.00</td>';
       r.cells[2].textContent=row.desc||"";
@@ -233,21 +270,64 @@ function restoreState(){
       if(r.cells[4]) r.cells[4].textContent=row.total||"0.00";
     });
   }
-  if(Array.isArray(state.texts)){
+  if(Array.isArray(snapshot.texts)){
     var items=document.querySelectorAll(".t1.ce, .foot .ce");
-    items.forEach(function(el, idx){if(state.texts[idx]!==undefined)el.textContent=state.texts[idx];});
+    items.forEach(function(el, idx){if(snapshot.texts[idx]!==undefined)el.textContent=snapshot.texts[idx];});
   }
+  calc();
   return true;
+}
+function saveState(){
+  try{localStorage.setItem(STATE_KEY, JSON.stringify(getCurrentSnapshot()));}catch(e){}
+}
+function restoreState(){
+  var state=null;
+  try{state=JSON.parse(localStorage.getItem(STATE_KEY));}catch(e){state=null;}
+  if(!state)return false;
+  var ok=applySnapshot(state);
+  if(ok) saveState();
+  return ok;
+}
+function restoreDefaultState(){
+  var snap=defaultSnapshot();
+  if(applySnapshot(snap)){
+    saveState();
+    saveHistorySnapshot();
+    updateHistoryButtons();
+  }
+}
+function restoreHistory(delta){
+  var history=getHistory();
+  if(!history.length)return;
+  var idx=getHistoryIndex()+delta;
+  if(idx<0) idx=0;
+  if(idx>=history.length) idx=history.length-1;
+  if(applySnapshot(history[idx])){
+    setHistoryIndex(idx);
+    saveState();
+    updateHistoryButtons();
+  }
 }
 emp.addEventListener("change",saveEmp);emp.addEventListener("blur",saveEmp);
 var l0=load();if(l0.indexOf(emp.value.toUpperCase())<0)saveCompaniesList();fill();
-function syncEmp(){var v=emp.value.trim().toUpperCase();document.querySelectorAll(".empsync").forEach(function(n){n.textContent=v});saveState();}
+function syncEmp(){var v=emp.value.trim().toUpperCase();document.querySelectorAll(".empsync").forEach(function(n){n.textContent=v});saveState();saveHistorySnapshot();updateHistoryButtons();}
 emp.addEventListener("input",syncEmp);
+function shouldPersist(target){
+  if(!target)return false;
+  return target.matches("#empresa, .q, .p, .ce") || !!target.closest(".ce");
+}
 document.addEventListener("input",function(e){
-  if(e.target && (e.target.matches(".t1.ce") || e.target.matches(".foot .ce") || e.target.matches("#empresa"))){
-    saveState();
-  }
+  if(shouldPersist(e.target)){ saveState(); saveHistorySnapshot(); updateHistoryButtons(); }
 },true);
+document.addEventListener("change",function(e){
+  if(shouldPersist(e.target)){ saveState(); saveHistorySnapshot(); updateHistoryButtons(); }
+},true);
+
+document.getElementById("btnDefaultState").addEventListener("click", restoreDefaultState);
+document.getElementById("btnReloadState").addEventListener("click", function(){ restoreState(); updateHistoryButtons(); });
+document.getElementById("btnBackState").addEventListener("click", function(){ restoreHistory(-1); });
+document.getElementById("btnForwardState").addEventListener("click", function(){ restoreHistory(1); });
+updateHistoryButtons();
 
 /* ---------- ELEMENTOS FLOTANTES ---------- */
 var cur=null;
