@@ -157,7 +157,7 @@ tfoot td{height:32px;font-weight:bold}
 <script>
 (function(){
 "use strict";
-var $=function(s){return document.querySelector(s)},page=$("#page"),tb=$("#tb"),menu=$("#menu");
+var $=function(s){return document.querySelector(s)},page=$("#page"),tb=$("#tb"),menu=$("#menu"),KEY="cot_empresas",emp=$("#empresa"),dl=$("#empList"),STATE_KEY="cotizacion_state_v1",HISTORY_KEY="cot_history_v1",HISTORY_INDEX_KEY="cot_history_index_v1";
 
 /* ---------- TABLA Y CÁLCULO ---------- */
 function pad(n){return n<10?"0"+n:""+n}
@@ -189,16 +189,15 @@ window.addEventListener("beforeunload", saveState);
 var d=new Date(),hoy=pad(d.getDate())+"/"+pad(d.getMonth()+1)+"/"+d.getFullYear();
 
 /* ---------- EMPRESAS Y AUTOGUARDADO (LocalStorage) ---------- */
-var KEY="cot_empresas",emp=$("#empresa"),dl=$("#empList"),STATE_KEY="cotizacion_state_v1",HISTORY_KEY="cot_history_v1",HISTORY_INDEX_KEY="cot_history_index_v1";
 function load(){try{return JSON.parse(localStorage.getItem(KEY))||[]}catch(e){return[]}}
 function defaultSnapshot(){
   return {
     empresa:"COMPAÑÍA RAISE CLIMBER JRF SAC.",
     rows:[{q:"08",p:"50.00",desc:"CATALINAS CANAL CHABETERO",total:"400.00"}],
     texts:[
-      "TALLER MECANICO DE MANTENIMIENTO INDUSTRIALMR. TORNO EIRL",
-      "FABRICACION DE PIEZAS INDUSTRIALES Y REPUESTODE MAQUINARIAS",
-      "LUGAR: SANTA MARTHA –CALLE SAN CARLOS MZ B LT 1ATE VITARTE",
+      "TALLER MECANICO DE MANTENIMIENTO INDUSTRIAL<br>MR. TORNO EIRL",
+      "FABRICACION DE PIEZAS INDUSTRIALES Y REPUESTO<br>DE MAQUINARIAS",
+      "LUGAR: SANTA MARTHA –CALLE SAN CARLOS MZ B LT 1<br>ATE VITARTE",
       "TELEFONO: 997330112"
     ]
   };
@@ -253,12 +252,15 @@ function collectRows(){
 }
 function collectTexts(){
   var arr=[];
-  document.querySelectorAll(".t1.ce, .foot .ce").forEach(function(el){arr.push(el.textContent.trim());});
+  document.querySelectorAll(".t1.ce, .foot .ce").forEach(function(el){arr.push(el.innerHTML);});
   return arr;
 }
 function applySnapshot(snapshot){
   if(!snapshot)return false;
-  if(snapshot.empresa!==undefined && emp) emp.value=snapshot.empresa;
+  if(snapshot.empresa!==undefined && emp){
+    emp.value=snapshot.empresa;
+    document.querySelectorAll(".empsync").forEach(function(el){el.textContent=emp.value.trim().toUpperCase();});
+  }
   if(Array.isArray(snapshot.rows) && snapshot.rows.length){
     tb.innerHTML="";
     snapshot.rows.forEach(function(row){
@@ -272,7 +274,13 @@ function applySnapshot(snapshot){
   }
   if(Array.isArray(snapshot.texts)){
     var items=document.querySelectorAll(".t1.ce, .foot .ce");
-    items.forEach(function(el, idx){if(snapshot.texts[idx]!==undefined)el.textContent=snapshot.texts[idx];});
+    var defaults=defaultSnapshot().texts;
+    items.forEach(function(el, idx){
+      if(snapshot.texts[idx]===undefined)return;
+      var text=snapshot.texts[idx];
+      if(text===defaults[idx].replace(/<br\s*\/?\s*>/gi,""))text=defaults[idx];
+      el.innerHTML=text;
+    });
   }
   calc();
   return true;
