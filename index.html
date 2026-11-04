@@ -173,25 +173,81 @@ function calc(){
   }
   $("#sum").textContent=s.toFixed(2); /* +IGV es solo visual: nunca entra aquí */
 }
-tb.addEventListener("input",function(e){if(e.target.tagName==="INPUT")calc()});
-[["CATALINAS CANAL CHABETERO","08",50]].forEach(function(d){
-  var r=addTable("row");r.cells[2].textContent=d[0];r.querySelector(".q").value=d[1];r.querySelector(".p").value=d[2].toFixed(2);
-});
+tb.addEventListener("input",function(e){if(e.target.tagName==="INPUT"){calc();saveState();}});
+if(!restoreState()){
+  [["CATALINAS CANAL CHABETERO","08",50]].forEach(function(d){
+    var r=addTable("row");r.cells[2].textContent=d[0];r.querySelector(".q").value=d[1];r.querySelector(".p").value=d[2].toFixed(2);
+  });
+}
 calc();
+window.addEventListener("beforeunload", saveState);
 var d=new Date(),hoy=pad(d.getDate())+"/"+pad(d.getMonth()+1)+"/"+d.getFullYear();
 
-/* ---------- EMPRESAS (LocalStorage) ---------- */
-var KEY="cot_empresas",emp=$("#empresa"),dl=$("#empList");
+/* ---------- EMPRESAS Y AUTOGUARDADO (LocalStorage) ---------- */
+var KEY="cot_empresas",emp=$("#empresa"),dl=$("#empList"),STATE_KEY="cotizacion_state_v1";
 function load(){try{return JSON.parse(localStorage.getItem(KEY))||[]}catch(e){return[]}}
-function fill(){dl.innerHTML="";load().forEach(function(n){var o=document.createElement("option");o.value=n;dl.appendChild(o)})}
+function fill(){
+  if(!dl)return;
+  dl.innerHTML="";
+  load().forEach(function(n){var o=document.createElement("option");o.value=n;dl.appendChild(o)})
+}
+function saveCompaniesList() {
+  var v=emp.value.trim().toUpperCase();
+  if(!v)return;
+  var l=load();
+  if(l.indexOf(v)<0){l.push(v);l.sort();try{localStorage.setItem(KEY,JSON.stringify(l))}catch(e){}fill()}
+}
 function saveEmp(){
-  var v=emp.value.trim().toUpperCase();if(!v)return;
-  var l=load();if(l.indexOf(v)<0){l.push(v);l.sort();try{localStorage.setItem(KEY,JSON.stringify(l))}catch(e){}fill()}
+  saveCompaniesList();
+  try{localStorage.setItem(STATE_KEY, JSON.stringify({empresa: emp.value, rows: collectRows(), texts: collectTexts()}));}catch(e){}
+}
+function collectRows(){
+  var rows=[];
+  for(var i=0;i<tb.rows.length;i++){
+    var r=tb.rows[i],q=r.querySelector(".q")?r.querySelector(".q").value:"1",p=r.querySelector(".p")?r.querySelector(".p").value:"0";
+    rows.push({q:q,p:p,desc:r.cells[2]?r.cells[2].textContent.trim():"",total:r.cells[4]?r.cells[4].textContent.trim():"0.00"});
+  }
+  return rows;
+}
+function collectTexts(){
+  var arr=[];
+  document.querySelectorAll(".t1.ce, .foot .ce").forEach(function(el){arr.push(el.textContent.trim());});
+  return arr;
+}
+function saveState(){
+  try{localStorage.setItem(STATE_KEY, JSON.stringify({empresa: emp.value || "", rows: collectRows(), texts: collectTexts()}));}catch(e){}
+}
+function restoreState(){
+  var state=null;
+  try{state=JSON.parse(localStorage.getItem(STATE_KEY));}catch(e){state=null;}
+  if(!state)return false;
+  if(state.empresa && emp) emp.value=state.empresa;
+  if(Array.isArray(state.rows) && state.rows.length){
+    tb.innerHTML="";
+    state.rows.forEach(function(row){
+      var r=tb.insertRow();
+      r.innerHTML='<td class="c"></td><td><input class="q" inputmode="decimal" value="1"></td><td class="ce" contenteditable="true"></td><td><input class="p" inputmode="decimal"></td><td class="r">0.00</td>';
+      r.cells[2].textContent=row.desc||"";
+      if(r.querySelector(".q")) r.querySelector(".q").value=row.q||"1";
+      if(r.querySelector(".p")) r.querySelector(".p").value=row.p||"0";
+      if(r.cells[4]) r.cells[4].textContent=row.total||"0.00";
+    });
+  }
+  if(Array.isArray(state.texts)){
+    var items=document.querySelectorAll(".t1.ce, .foot .ce");
+    items.forEach(function(el, idx){if(state.texts[idx]!==undefined)el.textContent=state.texts[idx];});
+  }
+  return true;
 }
 emp.addEventListener("change",saveEmp);emp.addEventListener("blur",saveEmp);
-var l0=load();if(l0.indexOf(emp.value.toUpperCase())<0)saveEmp();fill();
-function syncEmp(){var v=emp.value.trim().toUpperCase();document.querySelectorAll(".empsync").forEach(function(n){n.textContent=v})}
+var l0=load();if(l0.indexOf(emp.value.toUpperCase())<0)saveCompaniesList();fill();
+function syncEmp(){var v=emp.value.trim().toUpperCase();document.querySelectorAll(".empsync").forEach(function(n){n.textContent=v});saveState();}
 emp.addEventListener("input",syncEmp);
+document.addEventListener("input",function(e){
+  if(e.target && (e.target.matches(".t1.ce") || e.target.matches(".foot .ce") || e.target.matches("#empresa"))){
+    saveState();
+  }
+},true);
 
 /* ---------- ELEMENTOS FLOTANTES ---------- */
 var cur=null;
@@ -210,8 +266,8 @@ function addImg(inp,w){
   var k=document.createElement("div");k.textContent="N-CTA CORRIENTE BCP SOLES: 1912495456024";k.style.cssText="background:#ff0;font:bold 12px/19px Arial;padding:0 2px;white-space:nowrap";mkFloat(k,107,491);
   function blk(x,dots,dotIn,name,isEmp,sub,subIn){
     var b=document.createElement("div"),r=new Array(dots+1).join("…");b.dataset.lock="1";
-    b.style.cssText="font:bold 11.5px Arial;white-space:nowrap;padding:0";
-    b.innerHTML='<div style="line-height:20px;margin-left:'+dotIn+'px">'+r+'</div><div'+(isEmp?' class="empsync"':'')+' style="line-height:20px;margin-top:10px">'+name+'</div><div style="font-size:.83em;line-height:14px;margin:10px 0 0 '+subIn+'px">'+sub+'</div>';
+    b.style.cssText="font:bold 11.5px Arial;white-space:nowrap;padding:0;text-align:center";
+    b.innerHTML='<div style="line-height:20px">'+r+'</div><div'+(isEmp?' class="empsync"':'')+' style="line-height:20px;min-height:20px;margin-top:10px">'+name+'</div><div style="font-size:.83em;line-height:14px;margin-top:10px">'+sub+'</div>';
     mkFloat(b,x,719);
   }
   blk(107,24,0,"MARCO ROMERO SAPALLANAY EIRL.",false,"RUC:20602769314",46);
@@ -308,7 +364,7 @@ document.addEventListener("pointermove",function(e){
     [].forEach.call(tbl.rows[tdr.i].cells,function(c){c.style.height=h+"px"});
   }
 });
-document.addEventListener("pointerup",function(){tdr=null});
+document.addEventListener("pointerup",function(){tdr=null;saveState();});
 function fmtCell(k,v){
   if(!sel){alert("Haz clic primero en una celda de la tabla.");return}
   var sc=$("#scope").value,ci=sel.cellIndex,ri=sel.parentNode.rowIndex;
